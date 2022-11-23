@@ -48,7 +48,7 @@ class WhereClause {
     }
 }
 
-
+module.exports = WhereClause
 //bookit features
 
 // class APIFeatures {
