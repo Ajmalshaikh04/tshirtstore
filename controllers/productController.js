@@ -42,33 +42,33 @@ exports.getSingleProduct = BigPromise(async (req, res, next) => {
 //admin only controller
 exports.addProduct = BigPromise(async (req, res, next) => {
     //images
+    let file = req.files.photos
+    let imagesLinks = [];
 
-    let imageArray = [];
-    if (!req.files) {
-        next(new CustomError("Images are required ", 401));
-    }
+    if (file.length > 1) {
+        for (let i = 0; i < file.length; i++) {
+            result = await cloudinary.uploader.upload(file[i].tempFilePath, {
+                folder: "lcoproducts",
+            });
 
-    if (req.files) {
-        for (let index = 0; index < req.files.photos.length; index++) {
-            let result = await cloudinary.uploader.upload(
-                req.files.photos[index].tempFilePath,
-                {
-                    folder: "lcoproducts",
-                }
-            );
-
-            imageArray.push({
+            imagesLinks.push({
                 id: result.public_id,
                 secure_url: result.secure_url,
             });
         }
+    } else {
+        result = await cloudinary.uploader.upload(file.tempFilePath, {
+            folder: "lcoproducts",
+        });
+        imagesLinks.push({
+            id: result.public_id,
+            secure_url: result.secure_url,
+        });
     }
-
-    req.body.photos = imageArray;
+    req.body.photos = imagesLinks;
     req.body.user = req.user.id;
 
     const product = await Product.create(req.body);
-
     res.status(200).json({
         success: true,
         product,
@@ -90,15 +90,22 @@ exports.adminUpdateSingleProduct = BigPromise(async (req, res, next) => {
     if (!product) {
         return next(new CustomError("No Product found with this Id", 401));
     }
-
+    console.log('====================================');
+    console.log("Product:", product);
+    console.log('====================================');
     let imagesArray = [];
-
-    if (req.files.photos) {
+    let file = req.files
+    console.log('====================================');
+    console.log("File:", file);
+    console.log('====================================');
+    if (file) {
         //destroy the existing product img
-        for (let index = 0; index < product.photos.length; index++) {
-            let result = await cloudinary.uploader.destroy(
-                product.photos[index].id
-            );
+        if (file.length < 1) {
+            result = await cloudinary.uploader.destroy(file.id)
+        } else {
+            for (let i = 0; i < file.length; i++) {
+                result = await cloudinary.uploader.destroy(file[i].id);
+            }
         }
 
 
@@ -133,7 +140,6 @@ exports.adminUpdateSingleProduct = BigPromise(async (req, res, next) => {
         req.body.photos = imagesArray;
     }
 
-
     product = await Product.findByIdAndUpdate(req.params.id, req.body, {
         new: true,
         runValidators: true,
@@ -162,5 +168,43 @@ exports.adminDeleteSingleProduct = BigPromise(async (req, res, next) => {
     res.status(200).json({
         success: true,
         message: "Product deleted! ",
+    });
+});
+
+exports.addReview = BigPromise(async (req, res, next) => {
+    const { rating, comment, productId } = req.body
+
+    const review = {
+        user: req.user._id,
+        name: req.user.name,
+        rating: Number(rating),
+        comment,
+    }
+
+    const product = await Product.findById(productId)
+
+    const AlreadyReview = product.reviews.find((rev) => rev.user.toString() === req.user._id.toString())
+
+    if (AlreadyReview) {
+        product.reviews.forEach((review) => {
+            if (review.user.toString() === req.user._id.toString()) {
+                review.comment = comment
+                review.rating = rating
+            }
+        })
+    } else {
+        product.reviews.push(review)
+        product.numberOfReviews = product.reviews.length
+    }
+
+
+    //adjust rating
+    product.ratings = product.reviews.reduce((acc, item) => item.rating + acc, 0) / product.reviews.length
+
+    //save 
+    await product.save({ validateBeforeSave: false })
+
+    res.status(200).json({
+        success: true,
     });
 });
